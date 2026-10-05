@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>AR Oven - Hiro Marker</title>
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+  <!-- AR.js for A-Frame -->
+  <script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.5/aframe/build/aframe-ar.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: Arial, "Noto Sans Thai", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #controlPanel {
+      position: fixed;
+      z-index: 9999;
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      width: min(94vw, 720px);
+      background: rgba(10, 14, 20, 0.90);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 18px;
+      padding: 12px;
+      color: white;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+    }
+
+    .title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .status {
+      text-align: center;
+      font-size: 13px;
+      margin-bottom: 9px;
+      color: #b9e7ff;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+      margin-bottom: 7px;
+    }
+
+    button, select {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: #202936;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 7px 6px;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    button.primary {
+      background: #f36b21;
+    }
+
+    button.danger {
+      background: #b83232;
+    }
+
+    button.success {
+      background: #217a4b;
+    }
+
+    @media (max-width: 620px) {
+      .row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      #controlPanel {
+        bottom: 8px;
+      }
+    }
+  </style>
+
+  <script>
+    // -------------------------
+    // OVEN COMPONENT
+    // -------------------------
+    AFRAME.registerComponent('oven-controller', {
+      init: function () {
+        this.doorOpen = false;
+        this.temperature = 180;
+        this.minutes = 20;
+        this.mode = 'Bake';
+        this.running = false;
+        this.timeLeft = this.minutes * 60;
+        this.timer = null;
+
+        this.door = this.el.querySelector('#ovenDoor');
+        this.glow = this.el.querySelector('#ovenGlow');
+        this.display = this.el.querySelector('#ovenDisplayText');
+        this.fan = this.el.querySelector('#ovenFan');
+
+        this.updateDisplay();
+      },
+
+      setTemperature: function (temp) {
+        this.temperature = Number(temp);
+        this.updateDisplay();
+      },
+
+      setTime: function (minutes) {
+        this.minutes = Number(minutes);
+        this.timeLeft = this.minutes * 60;
+        this.updateDisplay();
+      },
+
+      setMode: function (mode) {
+        this.mode = mode;
+        this.updateDisplay();
+      },
+
+      toggleDoor: function () {
+        this.doorOpen = !this.doorOpen;
+
+        if (this.doorOpen) {
+          this.door.setAttribute('animation__door', {
+            property: 'rotation',
+            to: '-105 0 0',
+            dur: 700,
+            easing: 'easeInOutQuad'
+          });
+        } else {
+          this.door.setAttribute('animation__door', {
+            property: 'rotation',
+            to: '0 0 0',
+            dur: 700,
+            easing: 'easeInOutQuad'
+          });
+        }
+
+        this.updateDisplay();
+      },
+
+      start: function () {
+        if (this.running) return;
+
+        this.running = true;
+        this.timeLeft = this.minutes * 60;
+
+        if (this.glow) {
+          this.glow.setAttribute('material', 'color', '#ff6a00');
+          this.glow.setAttribute('material', 'emissive', '#ff2a00');
+          this.glow.setAttribute('material', 'emissiveIntensity', '1.2');
+          this.glow.setAttribute('opacity', '0.55');
+        }
+
+        if (this.fan) {
+          this.fan.setAttribute('animation__spin', {
+            property: 'rotation',
+            to: '0 0 360',
+            loop: true,
+            dur: this.mode === 'Convection' ? 700 : 1400,
+            easing: 'linear'
+          });
+        }
+
+        this.timer = setInterval(() => {
+          if (!this.running) return;
+
+          if (this.timeLeft > 0) {
+            this.timeLeft--;
+            this.updateDisplay();
+          } else {
+            this.stop();
+            alert('อบเสร็จแล้ว!');
+          }
+        }, 1000);
+
+        this.updateDisplay();
+      },
+
+      stop: function () {
+        this.running = false;
+
+        if (this.timer) {
+          clearInterval(this.timer);
+          this.timer = null;
+        }
+
+        if (this.glow) {
+          this.glow.setAttribute('material', 'color', '#331900');
+          this.glow.setAttribute('material', 'emissive', '#000000');
+          this.glow.setAttribute('opacity', '0.18');
+        }
+
+        if (this.fan) {
+          this.fan.removeAttribute('animation__spin');
+        }
+
+        this.updateDisplay();
+      },
+
+      updateDisplay: function () {
+        let timeText;
+
+        if (this.running) {
+          const m = Math.floor(this.timeLeft / 60);
+          const s = this.timeLeft % 60;
+          timeText = `${m}:${String(s).padStart(2, '0')}`;
+        } else {
+          timeText = `${this.minutes} min`;
+        }
+
+        const doorText = this.doorOpen ? 'OPEN' : 'CLOSED';
+        const runText = this.running ? 'RUNNING' : 'READY';
+
+        const text =
+          `${this.temperature}C | ${timeText}\n` +
+          `${this.mode} | ${doorText}\n` +
+          `${runText}`;
+
+        if (this.display) {
+          this.display.setAttribute('value', text);
+        }
+
+        const status = document.getElementById('statusText');
+        if (status) {
+          status.textContent =
+            `อุณหภูมิ ${this.temperature}°C | เวลา ${timeText} | โหมด ${this.mode} | ฝา ${this.doorOpen ? 'เปิด' : 'ปิด'} | ${this.running ? 'กำลังทำงาน' : 'พร้อมใช้งาน'}`;
+        }
+      }
+    });
+
+    function getOvenController() {
+      const oven = document.querySelector('#oven');
+      return oven ? oven.components['oven-controller'] : null;
+    }
+
+    function changeTemperature(value) {
+      const ctrl = getOvenController();
+      if (ctrl) ctrl.setTemperature(value);
+    }
+
+    function changeTime(value) {
+      const ctrl = getOvenController();
+      if (ctrl) ctrl.setTime(value);
+    }
+
+    function changeMode(value) {
+      const ctrl = getOvenController();
+      if (ctrl) ctrl.setMode(value);
+    }
+
+    function toggleDoor() {
+      const ctrl = getOvenController();
+      if (ctrl) ctrl.toggleDoor();
+    }
+
+    function startOven() {
+      const ctrl = getOvenController();
+      if (ctrl) ctrl.start();
+    }
+
+    function stopOven() {
+      const ctrl = getOvenController();
+      if (ctrl) ctrl.stop();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const marker = document.querySelector('#hiroMarker');
+      const markerStatus = document.querySelector('#markerStatus');
+
+      marker.addEventListener('markerFound', () => {
+        markerStatus.textContent = 'พบ Hiro Marker แล้ว';
+      });
+
+      marker.addEventListener('markerLost', () => {
+        markerStatus.textContent = 'กำลังค้นหา Hiro Marker...';
+      });
+    });
+  </script>
+</head>
+
+<body>
+
+  <!-- UI -->
+  <div id="controlPanel">
+    <div class="title">AR Smart Oven Control</div>
+    <div class="status" id="markerStatus">กำลังค้นหา Hiro Marker...</div>
+    <div class="status" id="statusText">อุณหภูมิ 180°C | เวลา 20 min | โหมด Bake | ฝา ปิด | พร้อมใช้งาน</div>
+
+    <div class="row">
+      <select onchange="changeTemperature(this.value)">
+        <option value="120">120°C</option>
+        <option value="150">150°C</option>
+        <option value="180" selected>180°C</option>
+        <option value="200">200°C</option>
+        <option value="220">220°C</option>
+        <option value="250">250°C</option>
+      </select>
+
+      <select onchange="changeTime(this.value)">
+        <option value="5">5 นาที</option>
+        <option value="10">10 นาที</option>
+        <option value="20" selected>20 นาที</option>
+        <option value="30">30 นาที</option>
+        <option value="45">45 นาที</option>
+        <option value="60">60 นาที</option>
+      </select>
+
+      <select onchange="changeMode(this.value)">
+        <option value="Bake">Bake</option>
+        <option value="Grill">Grill</option>
+        <option value="Convection">Convection</option>
+        <option value="Pizza">Pizza</option>
+        <option value="Defrost">Defrost</option>
+      </select>
+
+      <button class="primary" onclick="toggleDoor()">เปิด / ปิด ฝา</button>
+    </div>
+
+    <div class="row">
+      <button class="success" onclick="startOven()">START</button>
+      <button class="danger" onclick="stopOven()">STOP</button>
+      <button onclick="changeTemperature(180); document.querySelector('select').value='180';">180°C ด่วน</button>
+      <button onclick="changeTime(20);">ตั้งเวลา 20 นาที</button>
+    </div>
+  </div>
+
+  <!-- AR Scene -->
+  <a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true; antialias: true"
+    arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+  >
+    <a-assets></a-assets>
+
+    <!-- HIRO MARKER -->
+    <a-marker preset="hiro" id="hiroMarker">
+
+      <!-- Oven Root -->
+      <a-entity
+        id="oven"
+        oven-controller
+        position="0 0.15 0"
+        rotation="-90 0 0"
+        scale="0.9 0.9 0.9"
+      >
+
+        <!-- Oven Body -->
+        <a-box
+          position="0 0.55 0"
+          width="1.45"
+          height="1.20"
+          depth="1.15"
+          color="#4a4e55"
+          roughness="0.55"
+          metalness="0.45"
+        ></a-box>
+
+        <!-- Top Panel -->
+        <a-box
+          position="0 1.13 0"
+          width="1.48"
+          height="0.16"
+          depth="1.18"
+          color="#2b2f35"
+        ></a-box>
+
+        <!-- Control panel -->
+        <a-box
+          position="0 0.87 0.585"
+          width="1.28"
+          height="0.25"
+          depth="0.05"
+          color="#17191d"
+        ></a-box>
+
+        <!-- Knobs -->
+        <a-cylinder
+          position="-0.47 0.89 0.63"
+          radius="0.08"
+          height="0.05"
+          rotation="90 0 0"
+          color="#bfc4c9"
+        ></a-cylinder>
+
+        <a-cylinder
+          position="0.47 0.89 0.63"
+          radius="0.08"
+          height="0.05"
+          rotation="90 0 0"
+          color="#bfc4c9"
+        ></a-cylinder>
+
+        <!-- Digital display -->
+        <a-plane
+          position="0 0.90 0.615"
+          width="0.55"
+          height="0.18"
+          color="#061018"
+        ></a-plane>
+
+        <a-text
+          id="ovenDisplayText"
+          value="180C | 20 min\nBake | CLOSED\nREADY"
+          align="center"
+          position="0 0.91 0.635"
+          width="1.25"
+          color="#59e3ff"
+        ></a-text>
+
+        <!-- Inside cavity -->
+        <a-box
+          position="0 0.38 0.50"
+          width="1.08"
+          height="0.58"
+          depth="0.07"
+          color="#101214"
+        ></a-box>
+
+        <!-- Heating Glow -->
+        <a-plane
+          id="ovenGlow"
+          position="0 0.38 0.545"
+          width="0.95"
+          height="0.46"
+          color="#331900"
+          opacity="0.18"
+          material="side: double"
+        ></a-plane>
+
+        <!-- Oven shelf -->
+        <a-box
+          position="0 0.25 0.57"
+          width="0.92"
+          height="0.018"
+          depth="0.05"
+          color="#92979c"
+        ></a-box>
+
+        <!-- Fan -->
+        <a-cylinder
+          id="ovenFan"
+          position="0 0.38 0.555"
+          radius="0.13"
+          height="0.025"
+          rotation="90 0 0"
+          color="#60656b"
+        ></a-cylinder>
+
+        <!-- Door hinge pivot -->
+        <a-entity
+          id="ovenDoor"
+          position="0 0.08 0.61"
+        >
+          <!-- Door frame -->
+          <a-box
+            position="0 0.29 0"
+            width="1.17"
+            height="0.63"
+            depth="0.07"
+            color="#20242a"
+          ></a-box>
+
+          <!-- Door glass -->
+          <a-plane
+            position="0 0.29 0.038"
+            width="0.95"
+            height="0.43"
+            color="#16222b"
+            opacity="0.74"
+            material="transparent: true; side: double"
+          ></a-plane>
+
+          <!-- Door handle -->
+          <a-box
+            position="0 0.55 0.08"
+            width="0.90"
+            height="0.05"
+            depth="0.07"
+            color="#c4c7cb"
+          ></a-box>
+        </a-entity>
+
+        <!-- Feet -->
+        <a-box position="-0.52 -0.08 0.35" width="0.16" height="0.14" depth="0.18" color="#24272c"></a-box>
+        <a-box position="0.52 -0.08 0.35" width="0.16" height="0.14" depth="0.18" color="#24272c"></a-box>
+        <a-box position="-0.52 -0.08 -0.35" width="0.16" height="0.14" depth="0.18" color="#24272c"></a-box>
+        <a-box position="0.52 -0.08 -0.35" width="0.16" height="0.14" depth="0.18" color="#24272c"></a-box>
+
+      </a-entity>
+    </a-marker>
+
+    <a-entity camera></a-entity>
+  </a-scene>
+</body>
+</html>
